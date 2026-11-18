@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splash Meet Manager</title>
+<meta name="description" content="Free, open-source swim meet manager that runs in your browser: entries, heats, timing, scoring, printouts and a live scoreboard.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b2545'/%3E%3Cpath d='M8 40c6 0 6-5 12-5s6 5 12 5 6-5 12-5 6 5 12 5' stroke='%2322c3c3' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3Cpath d='M8 50c6 0 6-5 12-5s6 5 12 5 6-5 12-5 6 5 12 5' stroke='%2322c3c3' stroke-width='5' fill='none' stroke-linecap='round' opacity='.55'/%3E%3Ccircle cx='36' cy='18' r='6' fill='%23ff7a59'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top noprint">
+  <a class="brand" href="#" aria-label="Splash home">
+    <svg viewBox="0 0 64 64" width="34" height="34" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0b2545"/><path d="M8 40c6 0 6-5 12-5s6 5 12 5 6-5 12-5 6 5 12 5" stroke="#22c3c3" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M8 50c6 0 6-5 12-5s6 5 12 5 6-5 12-5 6 5 12 5" stroke="#22c3c3" stroke-width="5" fill="none" stroke-linecap="round" opacity=".55"/><circle cx="36" cy="18" r="6" fill="#ff7a59"/></svg>
+    <span>Splash<small>Meet Manager</small></span>
+  </a>
+  <div class="meetname" id="meetTitle"></div>
+  <div class="saved muted small" id="saved"></div>
+</header>
+<nav class="tabs noprint" id="nav" hidden></nav>
+<main id="view" class="noprint"></main>
+<div id="print" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<footer class="foot noprint muted small">Splash Meet Manager · free &amp; open source (MIT) · your meet data stays in this browser</footer>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

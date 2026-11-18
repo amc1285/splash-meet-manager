@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Splash Live Results</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b2545'/%3E%3Cpath d='M8 40c6 0 6-5 12-5s6 5 12 5 6-5 12-5 6 5 12 5' stroke='%2322c3c3' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='36' cy='18' r='6' fill='%23ff7a59'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<style>
+  .lv-head { background: var(--navy); color: #fff; padding: .9rem 16px; }
+  .lv-head h1 { font-size: 1.2rem; margin: 0; }
+  .lv-head p { margin: .1rem 0 0; color: #b7c8d8; font-size: .85rem; }
+  .lv-status { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; font-weight: 700; color: #9fe6e6; text-transform: uppercase; letter-spacing: .05em; }
+  .lv-status::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: #2ee6a6; box-shadow: 0 0 0 0 rgba(46, 230, 166, .6); animation: pulse 2s infinite; }
+  .lv-status.stale::before { background: #f0c75e; animation: none; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(46, 230, 166, 0); } 100% { box-shadow: 0 0 0 0 rgba(46, 230, 166, 0); } }
+  .scorebar { display: flex; gap: .5rem; overflow-x: auto; padding: .75rem 16px; background: #10304f; }
+  .scorebar .t { flex: 1 0 auto; min-width: 7rem; background: rgba(255, 255, 255, .07); border-radius: 10px; padding: .45rem .7rem; color: #fff; border-left: 5px solid; }
+  .scorebar .t b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+  .scorebar .t span { font-size: .8rem; opacity: .85; }
+  .lv-tabs { display: flex; gap: .3rem; padding: .6rem 16px 0; max-width: 980px; margin: 0 auto; }
+  .lv-tabs button { font: inherit; font-weight: 700; padding: .45rem .9rem; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .lv-tabs button.on { background: var(--aqua); color: #fff; border-color: var(--aqua); }
+  .lv { max-width: 980px; margin: 0 auto; padding: .75rem 16px; }
+  .now .clock { font-size: clamp(2.6rem, 11vw, 4.5rem); }
+  .evlist button { display: flex; width: 100%; justify-content: space-between; gap: .5rem; text-align: left; font: inherit; padding: .65rem .2rem; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
+  .evlist button span { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  .evlist button.done span { color: var(--aqua); font-weight: 700; }
+  .pill { display: inline-block; font-size: .72rem; font-weight: 700; padding: .1rem .5rem; border-radius: 999px; background: var(--coral); color: #fff; text-transform: uppercase; letter-spacing: .04em; vertical-align: middle; }
+  /* projector board */
+  body.board { background: #071321; color: #fff; }
+  body.board .lv-tabs, body.board .foot { display: none; }
+  body.board .lv { max-width: none; padding: 1rem 2rem; }
+  body.board .card { background: #0d2238; border-color: #1b3a5a; color: #fff; }
+  body.board .tbl td, body.board .tbl th { border-color: #1b3a5a; font-size: 1.6rem; padding: .5rem .8rem; color: #fff; }
+  body.board .tbl th { font-size: 1rem; color: #9fb4c8; }
+  body.board .now .clock { font-size: 9rem; }
+  body.board h2 { font-size: 2rem; }
+  body.board .scorebar .t b { font-size: 2.6rem; }
+  body.board .muted { color: #9fb4c8; }
+  .empty { text-align: center; padding: 3rem 1rem; }
+</style>
+</head>
+<body>
+<header class="lv-head"><div class="row compact" style="justify-content:space-between;align-items:center">
+  <div style="min-width:0"><h1 id="mName">Live Results</h1><p id="mInfo"></p></div>
+  <span class="lv-status" id="status">Live</span></div></header>
+<div class="scorebar" id="scorebar" hidden></div>
+<nav class="lv-tabs" id="tabs"><button data-t="now" class="on">Now</button><button data-t="events">Events</button><button data-t="scores">Scores</button></nav>
+<main class="lv" id="out"><div class="empty muted">Loading…</div></main>
+<footer class="foot muted small">Powered by Splash Meet Manager · open source</footer>
+<script src="core.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = window.Splash, esc = S.esc;
+  var q = new URLSearchParams(location.search);
+  var mode = q.get('local') ? 'local' : (q.get('gh') ? 'gh' : null);
+  var meetId = q.get('local') || q.get('meet');
+  var board = q.get('board') === '1';
+  if (board) document.body.classList.add('board');
+  var meet = null, tab = 'now', openEv = null, clock = { running: false, startEpoch: 0, elapsed: 0, eventId: null, heat: null }, lastOk = 0;
+  var out = document.getElementById('out');
+
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-t]'); if (!b) return;
+    tab = b.dataset.t; openEv = null;
+    [].forEach.call(this.children, function (x) { x.classList.toggle('on', x === b); });
+    render();
+  });
+  out.addEventListener('click', function (e) { var b = e.target.closest('[data-ev]'); if (b) { openEv = openEv === b.dataset.ev ? null : b.dataset.ev; render(); } });
+
+  // ---------- data sources ----------
+  function loadLocal() {
+    try { var m = JSON.parse(localStorage.getItem('splash:meet:' + meetId)); if (m) { meet = m; lastOk = Date.now(); render(); } else empty('Meet not found in this browser.'); }
+    catch (e) { empty('Could not read meet.'); }
+  }
+  var ghParts = (q.get('gh') || '').split('/'), branch = q.get('branch') || 'live-results', rateLimited = false;
+  function loadGH() {
+    var path = 'live/' + encodeURIComponent(meetId) + '.json';
+    var apiUrl = 'https://api.github.com/repos/' + ghParts[0] + '/' + ghParts[1] + '/contents/' + path + '?ref=' + encodeURIComponent(branch);
+    var rawUrl = 'https://raw.githubusercontent.com/' + ghParts[0] + '/' + ghParts[1] + '/' + encodeURIComponent(branch) + '/' + path + '?t=' + Date.now();
+    var p = rateLimited ? fetch(rawUrl, { cache: 'no-store' }) : fetch(apiUrl, { headers: { Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+    p.then(function (r) {
+      if ((r.status === 403 || r.status === 429) && !rateLimited) { rateLimited = true; return fetch(rawUrl, { cache: 'no-store' }); }
+      return r;
+    }).then(function (r) {
+      if (!r.ok) throw new Error(r.status === 404 ? 'Results have not been published yet.' : 'Could not load results (' + r.status + ')');
+      return r.json();
+    }).then(function (m) { meet = m; lastOk = Date.now(); render(); })
+      .catch(function (e) { if (!meet) empty(e.message); setStatus(); });
+  }
+  function empty(msg) { out.innerHTML = '<div class="empty"><h2>' + esc(msg) + '</h2><p class="muted">This page refreshes automatically.</p></div>'; }
+
+  if (mode === 'local') {
+    loadLocal();
+    window.addEventListener('storage', function (e) { if (e.key === 'splash:meet:' + meetId) loadLocal(); });
+    if ('BroadcastChannel' in window) {
+      new BroadcastChannel('splash-live').onmessage = function (e) {
+        var d = e.data; if (!d || d.id !== meetId) return;
+        if (d.type === 'meet') loadLocal();
+        if (d.type === 'clock') { clock = d; if (tab === 'now') render(); }
+      };
+    }
+  } else if (mode === 'gh') {
+    loadGH(); setInterval(loadGH, 60000);
+  } else {
+    empty('No meet selected.');
+  }
+
+  // ---------- rendering ----------
+  function setStatus() {
+    var el = document.getElementById('status');
+    var age = lastOk ? Math.round((Date.now() - (meet && meet.published || lastOk)) / 60000) : null;
+    if (mode === 'local') { el.textContent = 'Live'; el.className = 'lv-status'; return; }
+    el.className = 'lv-status' + (age != null && age > 15 ? ' stale' : '');
+    el.textContent = age == null ? 'Connecting' : (age < 1 ? 'Updated just now' : 'Updated ' + age + ' min ago');
+  }
+  setInterval(setStatus, 30000);
+
+  function scorebar() {
+    var bar = document.getElementById('scorebar');
+    if (!meet.teams.length || !meet.scoring.ind.length) { bar.hidden = true; return; }
+    var s = S.teamScores(meet).overall;
+    bar.hidden = false;
+    bar.innerHTML = meet.teams.slice().sort(function (a, b) { return s[b.id] - s[a.id]; }).map(function (t) {
+      return '<div class="t" style="border-color:' + esc(t.color) + '"><span>' + esc(t.name) + '</span><b>' + s[t.id] + '</b></div>';
+    }).join('');
+  }
+  function render() {
+    if (!meet) return;
+    document.title = meet.name + ' — Live Results';
+    document.getElementById('mName').textContent = meet.name;
+    document.getElementById('mInfo').textContent = [meet.date, meet.location].filter(Boolean).join(' · ');
+    scorebar(); setStatus();
+    if (tab === 'now') out.innerHTML = vNow();
+    else if (tab === 'events') out.innerHTML = vEvents();
+    else out.innerHTML = vScores();
+    tickClock();
+  }
+  function evById(id) { return S.byId(meet.events, id); }
+  function vNow() {
+    var cur = meet.current || {};
+    var evId = (mode === 'local' && clock.eventId) || cur.eventId, heatNo = (mode === 'local' && clock.heat) || cur.heat || 1;
+    var ev = evById(evId);
+    if (!ev) return '<div class="empty muted">The meet has not started yet.</div>';
+    var heats = S.heatsOf(meet, ev), h = heats[heatNo - 1];
+    var html = '<section class="card now"><div class="cardhead"><h2>#' + ev.num + ' ' + esc(S.eventName(ev)) + '</h2><span class="pill">Now</span></div>' +
+      '<p class="muted">' + (ev.diving ? 'Diving' : 'Heat ' + heatNo + ' of ' + heats.length) + '</p>' +
+      (mode === 'local' && !ev.diving ? '<div class="clock center" id="lvClock">0.00</div>' : '') +
+      (h ? '<div class="tablewrap"><table class="tbl"><thead><tr><th>' + (ev.diving ? '#' : 'Ln') + '</th><th>Name</th><th>Team</th><th>Seed</th><th>' + (ev.diving ? 'Score' : 'Time') + '</th></tr></thead><tbody>' +
+        h.entries.map(function (en) {
+          var t = S.teamOf(meet, en.teamId);
+          return '<tr><td><b>' + en.lane + '</b></td><td>' + esc(S.entryLabel(meet, en)) + '</td><td><span class="dot" style="background:' + esc(t.color) + '"></span>' + esc(t.abbr) + '</td><td class="muted">' + S.fmtMark(ev, en.seed) + '</td><td><b>' + (en.status ? en.status : (en.result != null ? S.fmtMark(ev, en.result) : '')) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' : '') + '</section>';
+    // last completed event results
+    var idx = meet.events.indexOf(ev), prev = null;
+    for (var i = idx; i >= 0; i--) { var e = meet.events[i]; if (S.eventComplete(meet, e) && e !== ev) { prev = e; break; } }
+    if (!board || !h) html += resultsCard(ev, 'Results so far');
+    if (prev && !board) html += resultsCard(prev, 'Last completed');
+    var nxt = meet.events[idx + 1];
+    if (nxt && !board) html += '<section class="card"><p class="muted small" style="margin:0">Up next</p><h3 style="margin:0">#' + nxt.num + ' ' + esc(S.eventName(nxt)) + '</h3></section>';
+    return html;
+  }
+  function resultsCard(ev, label) {
+    var r = S.eventResults(meet, ev);
+    var rows = r.V.concat(r.JV).filter(function (x) { return x.mark != null || x.entry.status; });
+    if (!rows.length) return '';
+    return '<section class="card"><p class="muted small" style="margin:0">' + label + '</p><h3>#' + ev.num + ' ' + esc(S.eventName(ev)) + '</h3>' + resTable(ev, r) + '</section>';
+  }
+  function resTable(ev, r) {
+    var out2 = '';
+    ['V', 'JV'].forEach(function (div) {
+      var rows = r[div].filter(function (x) { return x.mark != null || x.entry.status; });
+      if (!rows.length) return;
+      if (r.JV.length) out2 += '<h4>' + (div === 'V' ? 'Varsity' : 'JV') + '</h4>';
+      out2 += '<div class="tablewrap"><table class="tbl compact"><thead><tr><th>Pl</th><th>Name</th><th>Team</th><th>' + (ev.diving ? 'Score' : 'Time') + '</th><th>Pts</th></tr></thead><tbody>' + rows.map(function (x) {
+        var t = S.teamOf(meet, x.entry.teamId);
+        return '<tr><td>' + (x.place || (x.exh ? 'X' : '')) + '</td><td>' + esc(S.entryLabel(meet, x.entry)) + '</td><td><span class="dot" style="background:' + esc(t.color) + '"></span>' + esc(t.abbr) + '</td><td><b>' + (x.entry.status || S.fmtMark(ev, x.mark)) + '</b></td><td>' + (x.points || '') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    });
+    return out2;
+  }
+  function vEvents() {
+    return '<section class="card evlist">' + meet.events.map(function (ev) {
+      var done = S.eventComplete(meet, ev), n = S.eventEntries(meet, ev.id).filter(function (e) { return e.status !== 'SCR'; }).length;
+      var open = openEv === ev.id;
+      var body = '';
+      if (open) {
+        var r = S.eventResults(meet, ev), has = r.V.concat(r.JV).some(function (x) { return x.mark != null || x.entry.status; });
+        body = '<div style="padding:.3rem 0 .8rem">' + (has ? resTable(ev, r) : heatList(ev)) + '</div>';
+      }
+      return '<button data-ev="' + ev.id + '" class="' + (done ? 'done' : '') + '"><strong>#' + ev.num + ' ' + esc(S.eventName(ev)) + '</strong><span>' + (done ? 'Final' : n + ' entries') + '</span></button>' + body;
+    }).join('') + '</section>';
+  }
+  function heatList(ev) {
+    var hs = S.heatsOf(meet, ev);
+    if (!hs.length) return '<p class="muted small">No entries.</p>';
+    return hs.map(function (h) {
+      return '<p class="muted small" style="margin:.4rem 0 .1rem"><b>' + (ev.diving ? 'Dive order' : 'Heat ' + h.heat) + '</b></p>' + h.entries.map(function (en) {
+        return '<div class="small">' + en.lane + '. ' + esc(S.entryLabel(meet, en)) + ' · ' + esc(S.teamOf(meet, en.teamId).abbr) + ' · ' + S.fmtMark(ev, en.seed) + '</div>';
+      }).join('');
+    }).join('');
+  }
+  function vScores() {
+    var s = S.teamScores(meet);
+    var cols = [['overall', 'Total']], gs = meet.events.map(function (e) { return e.gender; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
+    if (gs.length > 1) gs.forEach(function (g) { cols.push([g, S.GENDER_LABEL[g]]); });
+    if (meet.scoring.jv === 'separate' && meet.entries.some(function (e) { return e.division === 'JV'; })) cols.push(['V', 'Varsity'], ['JV', 'JV']);
+    return '<section class="card"><h2>Team scores</h2><div class="tablewrap"><table class="tbl scores"><thead><tr><th>Team</th>' + cols.map(function (c) { return '<th>' + c[1] + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      meet.teams.slice().sort(function (a, b) { return s.overall[b.id] - s.overall[a.id]; }).map(function (t) {
+        return '<tr><td><span class="dot" style="background:' + esc(t.color) + '"></span>' + esc(t.name) + '</td>' + cols.map(function (c) { return '<td>' + s[c[0]][t.id] + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody></table></div><p class="muted small">' + meet.events.filter(function (e) { return S.eventComplete(meet, e); }).length + ' of ' + meet.events.length + ' events final</p></section>';
+  }
+  var raf;
+  function tickClock() {
+    cancelAnimationFrame(raf);
+    (function t() {
+      var el = document.getElementById('lvClock'); if (!el) return;
+      var ms = clock.running ? Date.now() - clock.startEpoch : (clock.elapsed || 0);
+      el.textContent = S.formatTime(Math.floor(ms / 10));
+      raf = requestAnimationFrame(t);
+    })();
+  }
+})();
+</script>
+</body>
+</html>
